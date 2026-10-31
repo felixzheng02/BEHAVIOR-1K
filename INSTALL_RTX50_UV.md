@@ -91,16 +91,16 @@ environment.
 ```
 
 What it does, in order: PyTorch 2.7.0 for CUDA 12.8, NumPy 1.26, BDDL (editable),
-OmniGibson (editable), the 26 Isaac Sim 5.1 wheels (about 12 GB, downloaded with `curl`
-from pypi.nvidia.com), two cleanup steps for packages Isaac Sim bundles at the wrong
+OmniGibson (editable), the 26 Isaac Sim 5.1 wheels (11 GB once unpacked, downloaded with
+`curl` from pypi.nvidia.com), two cleanup steps for packages Isaac Sim bundles at the wrong
 version, then the three dataset downloads (about 37 GB into `datasets/`).
 
 `--confirm-no-conda` only skips the "you are not in a conda environment" prompt; it does not
 change what gets installed. Don't pass `--new-env`, which is the conda path and needs conda.
 
-Nearly all of that time is download. On this machine (about 120 MB/s, and pip's cache
-already warm) everything except the datasets took under 3 minutes; on a normal connection
-budget an hour, and more for the 37 GB of datasets.
+Almost all of the time is download. On this machine, at about 120 MB/s and with pip's cache
+already warm, everything except the datasets took under 3 minutes; on an ordinary connection
+budget an hour, plus however long 37 GB of datasets takes.
 
 **5. Check it works.**
 
@@ -167,8 +167,9 @@ and ran normally on the next attempt, so treat it as a resource problem rather t
 install. Check the limit and how much of it is in use:
 
 ```bash
-cat /proc/sys/fs/inotify/max_user_watches
-python3 -c "import glob; print(sum(1 for f in glob.glob('/proc/[0-9]*/fdinfo/*') for l in open(f, errors='ignore') if l.startswith('inotify wd')))"
+cat /proc/sys/fs/inotify/max_user_watches     # the limit, 65536 by default
+find /proc/*/fdinfo -type f 2>/dev/null | xargs -r grep -c '^inotify wd' 2>/dev/null |
+  awk -F: '{s+=$2} END {print s+0}'          # how many are in use
 ```
 
 Two ways out. Exclude the heavy directories from your editor's file watcher
@@ -209,7 +210,7 @@ ERROR: Package 'lerobot' requires a different Python: 3.11.18 not in '>=3.12'
 **Fix:** pin the commit `436812bd8ee39b768c645c248c91f1330834e687`, which is also the head of
 the snapshot branch `release/b1k-challenge-2026` and still declares
 `requires-python >= 3.11` and `numpy < 2`. This breaks the conda install too, not just this
-one; a branch name in a dependency is the underlying problem.
+one; the underlying problem is depending on a branch name instead of a commit.
 
 ### 2. `warp` was only in the `primitives` extra
 
@@ -279,7 +280,8 @@ uv pip freeze | diff constraints/behavior-v3.9.3-uv-5090.txt -
 - **`--joylo`, `--eval`, `--asset-pipeline`** were not tried on this setup.
 - **System libraries.** Isaac Sim needs `libEGL`/`libGL`, which were already present on this
   machine. If rendering fails with a missing `libEGL.so.1` or `libGL.so.1`, install
-  `libegl1 libgl1` with apt; that is the only step here that touches the system.
+  `libegl1 libgl1` with apt. Along with the inotify limit above, that is the only thing here
+  that touches the system rather than your home directory.
 - **Graphical mode.** Only headless rendering was tested.
 
 ## Writing your first script
