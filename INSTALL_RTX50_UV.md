@@ -21,8 +21,10 @@ You do not need conda. You do not need a CUDA toolkit or `nvcc` (only the option
 | BEHAVIOR-1K | v3.9.3 / tag `v3.9.3-post2` |
 | Date | 2026-10-31 |
 
-The install was done once by hand, then re-run from a clean clone and a clean venv to
-confirm this guide is complete. The exact package versions are in
+The install was done once by hand, then repeated from a clean clone into a clean venv,
+following only the steps below, to confirm this guide is complete: `setup.sh` ran through
+with no manual fixes, `import omnigibson` worked, and the smoke test rendered the apartment.
+The exact package versions of the first install are in
 [`constraints/behavior-v3.9.3-uv-5090.txt`](constraints/behavior-v3.9.3-uv-5090.txt).
 
 ## Before you start
@@ -107,11 +109,21 @@ python scripts/smoke_test_stretch.py stretch_rgb.png
 ```
 
 This loads the `Rs_int` apartment with the Stretch robot, steps the simulator 30 times and
-writes a 512x512 RGB frame. The first run takes about 3 minutes because shaders are compiled
-on the spot; later runs start in well under a minute. Open `stretch_rgb.png`: you should see
-the inside of an apartment. The last lines should be:
+writes a 512x512 RGB frame. A first run takes about 3 minutes, most of it compiling shaders;
+once that cache is warm the same run takes about 45 seconds.
+
+It worked if the command exits 0 and `stretch_rgb.png` shows the inside of an apartment.
+Don't look for the script's own `[smoke]` lines in the terminal: OmniGibson routes Python's
+stdout into the Kit log, whose path is printed near the top of the output. To read them:
+
+```bash
+grep smoke OmniGibson/appdata/local/logs/Kit/OmniGibson/3.9/kit_*.log
+```
 
 ```
+[smoke] robot=Robot action_dim=13
+[smoke] 30 steps in 1.3s
+[smoke] obs stretch/stretch:eyes:Camera:0/rgb: (512, 512, 4)
 [smoke] saved rgb to stretch_rgb.png: True
 [smoke] DONE
 ```
@@ -124,12 +136,57 @@ the simulator doesn't look for an X server.
 - **`isaacsim-kernel 5.1.0.0 requires websockets==12.0, but you have websockets 17.4`**, at
   the end of the pip output. `setup.sh` upgrades websockets on purpose, after Isaac Sim
   downgrades it. Nothing in OmniGibson needs the old version.
-- **Pillow 11.3.0 installed, while OmniGibson asks for `pillow~=11.0.0`.** One of the Isaac
-  Sim packages pulls the newer Pillow in. Image saving and loading work; leave it alone.
+- **Pillow 11.3.0 installed, while OmniGibson asks for `pillow~=11.0.0`.** Isaac Sim pulls the
+  newer Pillow in after OmniGibson is installed. Image saving and loading work; leave it
+  alone. Re-running `setup.sh` later reverses the pair (Pillow 11.0.0, and then
+  `isaacsim-kernel` is the one complaining, along with `click` and `psutil`). Both states
+  have been tested here and the simulator runs in both; don't chase these.
 - **Hundreds of `DEPRECATED: get/setDofFrictionProperties` lines** while a scene loads. These
   come from Isaac Sim's physics layer.
 - **`WARNING: bundled packaging copy not found, skipping packaging conflict fix: ...`** on a
   second run of `setup.sh`. The directory was already removed the first time.
+
+## If the simulator won't start
+
+### `Failed to create change watch ... errno=28/No space left on device`
+
+This is not about disk space. Isaac Sim asks the kernel to watch every directory of every
+extension, around 14,000 of them, and Linux caps inotify watches per user at 65,536 by
+default. An editor with this repo open can hold almost all of them: on this machine Cursor
+held 64,811, because the workspace contains the 19 GB `.venv` and 37 GB of `datasets`.
+
+OmniGibson usually survives a few thousand failed watches, but one startup here aborted just
+after `app ready` with:
+
+```
+terminate called after throwing an instance of 'std::system_error'
+  what():  Invalid argument
+```
+
+and ran normally on the next attempt, so treat it as a resource problem rather than a broken
+install. Check the limit and how much of it is in use:
+
+```bash
+cat /proc/sys/fs/inotify/max_user_watches
+python3 -c "import glob; print(sum(1 for f in glob.glob('/proc/[0-9]*/fdinfo/*') for l in open(f, errors='ignore') if l.startswith('inotify wd')))"
+```
+
+Two ways out. Exclude the heavy directories from your editor's file watcher
+(`files.watcherExclude` in VS Code or Cursor: `**/.venv/**`, `**/datasets/**`), or raise the
+kernel limit, which is the one step in this guide that needs root:
+
+```bash
+sudo sysctl -w fs.inotify.max_user_watches=524288                                   # now
+echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/99-inotify.conf    # and after reboot
+```
+
+### Python segfaults at the end of a script
+
+`og.shutdown()` was not called. Put it in a `finally` block, as the smoke test does.
+
+### `ModuleNotFoundError: No module named 'warp'`, or a lerobot/Python version error
+
+You are on upstream v3.9.3 rather than this branch. See the next section.
 
 ## What this fork changes
 
