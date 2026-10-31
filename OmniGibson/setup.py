@@ -55,7 +55,17 @@ setup(
         "pillow~=11.0.0",
         "websockets>=15.0.1",
         "omegaconf>=2.3.0",
-        "lerobot[dataset] @ git+https://github.com/wensi-ai/lerobot@release/b1k",
+        # omnigibson.utils.usd_utils imports warp at module level, so warp is needed by the core
+        # install and not only by the "primitives" extra. It ships prebuilt kernels; nvcc is not needed.
+        "warp-lang==1.12.0",
+        # lerobot[dataset] pulls in "datasets", which requires pyarrow with no upper bound.
+        # pyarrow >= 22 requires numpy >= 2 at runtime, which conflicts with the numpy<2 pin above.
+        "pyarrow<22",
+        # Pinned to a commit rather than a branch: wensi-ai/lerobot@release/b1k was force-pushed to
+        # upstream lerobot main (requires-python >= 3.12, numpy >= 2) on 2026-10-30, which cannot be
+        # installed on the Python 3.11 environment this repo requires. This commit is the head of the
+        # snapshot branch release/b1k-challenge-2026 and keeps requires-python >= 3.11 and numpy < 2.
+        "lerobot[dataset] @ git+https://github.com/wensi-ai/lerobot@436812bd8ee39b768c645c248c91f1330834e687",
     ],
     extras_require={
         "dev": [
@@ -78,7 +88,6 @@ setup(
         ],
         "primitives": [
             "ninja~=1.13.0",
-            "warp-lang==1.12.0",
             "nvidia-curobo @ git+https://github.com/StanfordVL/curobo@78612f45cef52c3fa0298de243a54cd7ca614414",
         ],
         "eval": [

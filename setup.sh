@@ -83,6 +83,7 @@ Options:
 Example (core components): ./setup.sh --new-env --omnigibson --bddl --dataset
 Example (full customization): ./setup.sh --new-env my_env --omnigibson --bddl --dataset --joylo --eval --primitives --cuda-version 12.6
 Example (non-interactive): ./setup.sh --new-env --omnigibson --dataset --accept-conda-tos --accept-nvidia-eula --accept-dataset-tos
+Example (no conda, in an already-activated Python 3.11 venv): ./setup.sh --omnigibson --bddl --dataset --confirm-no-conda --accept-nvidia-eula --accept-dataset-tos
 EOF
     exit 0
 fi
@@ -314,7 +315,11 @@ if [ "$OMNIGIBSON" = true ]; then
     # Install pre-commit for dev setup
     if [ "$DEV" = true ]; then
         echo "Setting up pre-commit..."
-        conda install -c conda-forge pre-commit -y
+        if command -v conda >/dev/null 2>&1 && [ -n "$CONDA_PREFIX" ]; then
+            conda install -c conda-forge pre-commit -y
+        else
+            python -m pip install pre-commit
+        fi
         cd "$WORKDIR/OmniGibson"
         pre-commit install || true  # Ignore errors here in case the directory is not a git repo
         cd "$WORKDIR"
@@ -435,9 +440,14 @@ if [ "$OMNIGIBSON" = true ]; then
 
         # Fix packaging conflict - remove conflicting version
         # There is a conflict where isaacsim enforces 23.0 but omni kit ships with 25.0
-        if [ -d "$CONDA_PREFIX/lib/python3.11/site-packages/isaacsim/extscache/omni.services.pip_archive-0.16.0+107.0.3.lx64.cp311/pip_prebundle/packaging" ]; then
+        # Ask Python for site-packages so this works in a conda env and in a plain venv alike.
+        SITE_PACKAGES=$(python -c "import sysconfig; print(sysconfig.get_path('purelib'))")
+        PACKAGING_CONFLICT_DIR="$SITE_PACKAGES/isaacsim/extscache/omni.services.pip_archive-0.16.0+107.0.3.lx64.cp311/pip_prebundle/packaging"
+        if [ -d "$PACKAGING_CONFLICT_DIR" ]; then
             echo "Fixing packaging conflict..."
-            rm -rf "$CONDA_PREFIX/lib/python3.11/site-packages/isaacsim/extscache/omni.services.pip_archive-0.16.0+107.0.3.lx64.cp311/pip_prebundle/packaging"
+            rm -rf "$PACKAGING_CONFLICT_DIR"
+        else
+            echo "WARNING: bundled packaging copy not found, skipping packaging conflict fix: $PACKAGING_CONFLICT_DIR"
         fi
     fi
     
